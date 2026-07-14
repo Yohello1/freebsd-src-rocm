@@ -32,6 +32,7 @@
 #include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/malloc.h>
+#include <sys/sysent.h>
 
 struct domainset;
 struct thread;
@@ -65,4 +66,13 @@ linux_set_current_flags(struct thread *td, int flags)
 typedef void fpu_safe_exec_cb_t(void *ctx);
 void lkpi_fpu_safe_exec(fpu_safe_exec_cb_t func, void *ctx);
 
+static inline bool
+in_compat_syscall(void)
+{
+#if defined(__amd64__) || defined(__aarch64__)
+	return (SV_CURPROC_FLAG(SV_ILP32) != 0);
+#else
+	return (false);
+#endif /* __amd64__ || __aarch64__ */
+}
 #endif	/* _LINUXKPI_LINUX_COMPAT_H_ */
