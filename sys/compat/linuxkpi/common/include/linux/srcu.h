@@ -52,3 +52,4 @@ extern void cleanup_srcu_struct(struct srcu_struct *);
 } while (0)
 
 #endif					/* _LINUXKPI_LINUX_SRCU_H_ */
+

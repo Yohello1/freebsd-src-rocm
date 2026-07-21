@@ -30,6 +30,7 @@
 #define	_LINUXKPI_LINUX_KTHREAD_H_
 
 #include <linux/sched.h>
+#include <linux/mm_types.h>
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -38,6 +39,7 @@
 #include <sys/queue.h>
 #include <sys/taskqueue.h>
 #include <sys/unistd.h>
+
 
 struct task_struct;
 struct kthread_work;
@@ -162,5 +164,6 @@ kthread_flush_worker(struct kthread_worker *worker)
 {
 	taskqueue_drain_all(worker->tq);
 }
+
 
 #endif /* _LINUXKPI_LINUX_KTHREAD_H_ */

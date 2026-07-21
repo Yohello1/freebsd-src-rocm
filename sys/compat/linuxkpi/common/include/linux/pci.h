@@ -135,6 +135,8 @@ MODULE_PNP_INFO("U32:vendor;U32:device;V32:subvendor;V32:subdevice",	\
 #define	PCI_EXP_RTCAP		PCIER_ROOT_CAP			/* Root Capabilities */
 #define	PCI_EXP_RTSTA		PCIER_ROOT_STA			/* Root Status */
 #define	PCI_EXP_DEVCAP2		PCIER_DEVICE_CAP2		/* Device Capabilities 2 */
+#define	PCI_EXP_DEVCAP2_ATOMIC_COMP32		0x00000080		/* Device Capabilities 2 */
+#define	PCI_EXP_DEVCAP2_ATOMIC_COMP64		0x00000100		/* Device Capabilities 2 */
 #define	PCI_EXP_DEVCTL2		PCIER_DEVICE_CTL2		/* Device Control 2 */
 #define	PCI_EXP_DEVCTL2_LTR_EN	PCIEM_CTL2_LTR_ENABLE
 #define	PCI_EXP_DEVCTL2_COMP_TMOUT_DIS	PCIEM_CTL2_COMP_TIMO_DISABLE

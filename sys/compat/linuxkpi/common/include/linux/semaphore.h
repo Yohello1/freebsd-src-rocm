@@ -65,4 +65,5 @@ init_MUTEX(struct semaphore *sem)
 
 #define	sema_init(...)	linux_sema_init(__VA_ARGS__)
 
+
 #endif /* _LINUXKPI_LINUX_SEMAPHORE_H_ */

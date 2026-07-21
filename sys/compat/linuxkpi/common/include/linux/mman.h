@@ -35,4 +35,8 @@
  */
 #include <linux/smp.h>
 
+#define PROT_READ 0x1
+#define PROT_EXEC 0x4
+#define MAP_SHARED 0x01
+
 #endif /* _LINUX_MMAN_H */

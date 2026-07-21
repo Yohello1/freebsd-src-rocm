@@ -34,6 +34,32 @@
 #include <linux/slab.h>
 #include <linux/gfp.h>
 
+#define kfifo_in(_kf, _buf, _len) \
+({ \
+        size_t _i; \
+        bool _ok = true; \
+        for (_i = 0; _i < (_len); _i++) { \
+                if (!kfifo_put(_kf, ((__typeof__((_kf)->head))(_buf))[_i])) { \
+                        _ok = false; \
+                        break; \
+                } \
+        } \
+        _i; \
+})
+
+#define kfifo_out(_kf, _buf, _len) \
+({ \
+        size_t _i; \
+        bool _ok = true; \
+        for (_i = 0; _i < (_len); _i++) { \
+                if (!kfifo_get(_kf, &(((__typeof__((_kf)->head))(_buf))[_i]))) { \
+                        _ok = false; \
+                        break; \
+                } \
+        } \
+        _i; \
+})
+
 /*
  * INIT_KFIFO() is used to initialize the structure declared with
  * DECLARE_KFIFO(). It doesn't work with DECLARE_KFIFO_PTR().
@@ -116,26 +142,5 @@
 	_rc;								\
 })
 
-#define	kfifo_alloc(_kf, _s, _gfp)					\
-({									\
-	int _error;							\
-									\
-	(_kf)->head = kmalloc(sizeof(__typeof(*(_kf)->head)) * (_s), _gfp); \
-	if ((_kf)->head == NULL)					\
-		_error = ENOMEM;					\
-	else {								\
-		(_kf)->total = (_s);					\
-		_error = 0;						\
-	}								\
-									\
-	_error;								\
-})
-
-#define	kfifo_free(_kf)							\
-({									\
-	kfree((_kf)->head);						\
-	(_kf)->head = NULL;						\
-	(_kf)->total = (_kf)->count = (_kf)->first = (_kf)->last = 0;	\
-})
 
 #endif	/* _LINUXKPI_LINUX_KFIFO_H_*/
