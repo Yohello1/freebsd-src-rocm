@@ -386,11 +386,15 @@ struct class *lkpi_class_create(const char *name);
 static inline int
 class_register(struct class *class)
 {
-
+	pr_err("sex can exist\n");
 	class->bsdclass = devclass_create(class->name);
+	pr_err("sex may exist\n");
 	kobject_init(&class->kobj, &linux_class_ktype);
+	pr_err("sex will exist\n");
 	kobject_set_name(&class->kobj, class->name);
+	pr_err("sex has exist\n");
 	kobject_add(&class->kobj, &linux_class_root, class->name);
+	pr_err("sex has existed\n");
 
 	return (0);
 }

@@ -78,6 +78,8 @@ cdev_add(struct linux_cdev *cdev, dev_t dev, unsigned count)
 	struct make_dev_args args;
 	int error;
 
+	printf("cdev_add_sex: Count: %i\n", count);
+
 	if (count != 1)
 		return (-EINVAL);
 

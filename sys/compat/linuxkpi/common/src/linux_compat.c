@@ -2711,16 +2711,31 @@ __register_chrdev(unsigned int major, unsigned int baseminor,
 	struct linux_cdev *cdev;
 	int ret = 0;
 	int i;
+	unsigned int temp = count;
+
+	printf("shades of sex\n");
 
 	for (i = baseminor; i < baseminor + count; i++) {
+		printf("abnormal sex %d\n", i);
 		cdev = cdev_alloc();
+		printf("outrageous sex %d\n", i);
 		cdev->ops = fops;
+		printf("sextopia %d\n", i);
+
 		kobject_set_name(&cdev->kobj, name);
+		printf("bOb the sexer %d\n", i);
 
 		ret = cdev_add(cdev, makedev(major, i), 1);
-		if (ret != 0)
+		printf("monster sex %d\n", i);
+
+		if (ret != 0) {
+			//printf("sex interrupted %d\n", i);
+			printf("sex interuppted\n Intended Count: %i\n Actual Count: %i\n Error Code: %i\n", temp, i, ret);
 			break;
+		}
 	}
+
+	printf("sexfinissez");
 	return (ret);
 }
 
