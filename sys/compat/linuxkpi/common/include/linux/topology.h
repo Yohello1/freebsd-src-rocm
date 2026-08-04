@@ -31,5 +31,14 @@
 #define	_LINUXKPI_LINUX_TOPOLOGY_H_
 
 #include <asm/topology.h>
+#include <sys/cpuset.h>
+
+#define LOCAL_DISTANCE 		10
+#define REMOTE_DISTANCE 	20
+#define DISTANCE_BITS		8 
+#ifndef node_distance
+#define node_distance(from,to) 	10
+#endif
+
 
 #endif /* _LINUXKPI_LINUX_TOPOLOGY_H_ */

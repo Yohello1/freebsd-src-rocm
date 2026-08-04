@@ -37,4 +37,12 @@ static inline const struct cpumask *cpumask_of_node(int node)
     return (const struct cpumask *)&cpu_online_mask; 
 }
 
+static inline unsigned int
+cpumask_weight(const struct cpumask *srcp)
+{
+	(void)srcp;
+	return ((unsigned int) mp_ncpus);
+}
+
+
 #endif
