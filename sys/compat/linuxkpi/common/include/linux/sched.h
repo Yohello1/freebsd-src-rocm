@@ -77,12 +77,14 @@ struct task_struct {
 	atomic_t state;
 	atomic_t kthread_flags;
 	pid_t	pid;	/* BSD thread ID */
+#if __FreeBSD_version >= 1600021
+	pid_t	tgid;
+#endif
 	const char    *comm;
 	void   *bsd_ioctl_data;
 	unsigned bsd_ioctl_len;
 	struct completion parked;
 	struct completion exited;
-	pid_t tgid;
 #define	TS_RCU_TYPE_MAX 2
 	TAILQ_ENTRY(task_struct) rcu_entry[TS_RCU_TYPE_MAX];
 	int rcu_recurse[TS_RCU_TYPE_MAX];

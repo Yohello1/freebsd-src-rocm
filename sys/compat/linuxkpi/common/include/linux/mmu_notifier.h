@@ -58,7 +58,7 @@ static inline int
 mmu_notifier_register(__unused struct mmu_notifier *mn, __unused struct mm_struct *mm) 
 {
     pr_debug("%s TODO\n", __func__);
-    return -(ENOSYS); 
+    return (-EINVAL); 
 }
 
 static inline void 
@@ -72,7 +72,7 @@ mmu_notifier_get(const struct mmu_notifier_ops *ops, struct mm_struct *mm)
 {
     pr_debug("%s TODO\n", __func__);
     if (ops != NULL && ops->alloc_notifier != NULL)
-        return ops->alloc_notifier(mm);
+        return (ops->alloc_notifier(mm));
     return (ERR_PTR(-EINVAL));
 }
 
