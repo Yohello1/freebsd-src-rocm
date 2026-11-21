@@ -36,11 +36,8 @@
 #include <sys/cpuset.h>
 #include <sys/smp.h>
 #include <linux/compiler.h>
+#include <linux/cpumask.h>
 #include <linux/slab.h>
-
-typedef	cpuset_t	cpumask_t;
-
-extern cpumask_t cpu_online_mask;
 
 cpumask_t *lkpi_get_static_single_cpu_mask(int);
 
