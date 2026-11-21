@@ -154,6 +154,7 @@ static void linux_cdev_deref(struct linux_cdev *ldev);
 static struct vm_area_struct *linux_cdev_handle_find(void *handle);
 
 cpumask_t cpu_online_mask;
+struct cpumask lkpi_cpu_none_mask;
 static cpumask_t **static_single_cpu_mask;
 static cpumask_t *static_single_cpu_mask_lcs;
 struct kobject linux_class_root;
