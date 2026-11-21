@@ -1,6 +1,9 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2021 Beckhoff Automation GmbH & Co. KG
  * Copyright (c) 2022 Bjoern A. Zeeb
+ * Copyright (c) 2026 The FreeBSD Foundation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -114,6 +117,30 @@
 	}								\
 									\
 	_rc;								\
+})
+
+#define	kfifo_in(_kf, _buf, _n)						\
+({									\
+	const __typeof(*(_kf)->head) *_src = (_buf);			\
+	size_t _i, _cnt = (_n);						\
+									\
+	for (_i = 0; _i < _cnt; _i++)					\
+		if (!kfifo_put(_kf, _src[_i]))				\
+			break;						\
+									\
+	_i;								\
+})
+
+#define	kfifo_out(_kf, _buf, _n)					\
+({									\
+	__typeof(*(_kf)->head) *_dst = (_buf);				\
+	size_t _i, _cnt = (_n);						\
+									\
+	for (_i = 0; _i < _cnt; _i++)					\
+		if (!kfifo_get(_kf, &_dst[_i]))				\
+			break;						\
+									\
+	_i;								\
 })
 
 #define	kfifo_alloc(_kf, _s, _gfp)					\
