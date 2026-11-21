@@ -1253,6 +1253,91 @@ lkpi_pci_request_region(struct pci_dev *pdev, int bar, const char *res_name,
 	return (0);
 }
 
+/*
+ * Enable AtomicOp requests from an endpoint towards its root port.
+ * Modelled after Linux drivers/pci/pci.c:pci_enable_atomic_ops_to_root().
+ *
+ * Returns 0 if all upstream switch ports route AtomicOps, no upstream
+ * switch port blocks AtomicOp egress, and the root port can complete all
+ * sizes in cap_mask (PCI_EXP_DEVCAP2_ATOMIC_COMP{32,64,128}); in that case
+ * AtomicOp Requester Enable is set on the device.  Negative errno otherwise.
+ *
+ * Differences from Linux:
+ * - There is no is_virtfn check as LinuxKPI does not expose SR-IOV VFs.
+ * - LinuxKPI may hand out multiple struct pci_dev for the same bridge
+ *   (pcie_find_root_port() and pci_upstream_bridge() each allocate their
+ *   own via lkpinew_pci_dev()), and a root port's pci_upstream_bridge()
+ *   is NULL.  Compare the underlying device_t, not pci_dev pointers, and
+ *   stop on NULL instead of dereferencing it.
+ */
+int
+linuxkpi_pci_enable_atomic_ops_to_root(struct pci_dev *pdev, uint32_t cap_mask)
+{
+	struct pci_dev *root, *bridge;
+	uint32_t cap, ctl2;
+
+	if (!pci_is_pcie(pdev))
+		return (-EINVAL);
+
+	/*
+	 * Per PCIe r7.0, sec 6.15, endpoints and root ports may be
+	 * AtomicOp requesters.  Like Linux, only support (legacy) endpoints
+	 * as requesters and root ports as completers.
+	 */
+	switch (pci_pcie_type(pdev)) {
+	case PCI_EXP_TYPE_ENDPOINT:
+	case PCI_EXP_TYPE_LEG_END:
+		break;
+	default:
+		return (-EINVAL);
+	}
+
+	root = pcie_find_root_port(pdev);
+	if (root == NULL) {
+		/*
+		 * Root port not visible (e.g., hypervisor).  If AtomicOp
+		 * Requester Enable is already set, assume whoever set it
+		 * verified the path.
+		 */
+		pcie_capability_read_dword(pdev, PCI_EXP_DEVCTL2, &ctl2);
+		if ((ctl2 & PCI_EXP_DEVCTL2_ATOMIC_REQ) != 0)
+			return (0);
+		return (-EINVAL);
+	}
+
+	pcie_capability_read_dword(root, PCI_EXP_DEVCAP2, &cap);
+	if ((cap & cap_mask) != cap_mask)
+		return (-EINVAL);
+
+	for (bridge = pci_upstream_bridge(pdev);
+	    bridge != NULL && bridge->dev.bsddev != root->dev.bsddev;
+	    bridge = pci_upstream_bridge(bridge)) {
+		switch (pci_pcie_type(bridge)) {
+		case PCI_EXP_TYPE_UPSTREAM:
+			/* Upstream ports must not block AtomicOps on egress. */
+			pcie_capability_read_dword(bridge, PCI_EXP_DEVCTL2,
+			    &ctl2);
+			if ((ctl2 & PCI_EXP_DEVCTL2_ATOMIC_EGRESS_BLOCK) != 0)
+				return (-EINVAL);
+			/* FALLTHROUGH */
+		case PCI_EXP_TYPE_DOWNSTREAM:
+			/* All switch ports need to route AtomicOps. */
+			pcie_capability_read_dword(bridge, PCI_EXP_DEVCAP2,
+			    &cap);
+			if ((cap & PCI_EXP_DEVCAP2_ATOMIC_ROUTE) == 0)
+				return (-EINVAL);
+			break;
+		}
+	}
+	/* Ran off the top without meeting the root port. */
+	if (bridge == NULL)
+		return (-EINVAL);
+
+	pcie_capability_set_word(pdev, PCI_EXP_DEVCTL2,
+	    PCI_EXP_DEVCTL2_ATOMIC_REQ);
+	return (0);
+}
+
 int
 linuxkpi_pci_request_region(struct pci_dev *pdev, int bar, const char *res_name)
 {

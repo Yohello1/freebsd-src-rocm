@@ -144,6 +144,8 @@ MODULE_PNP_INFO("U32:vendor;U32:device;V32:subvendor;V32:subdevice",	\
 #define	PCI_EXP_DEVCTL2		PCIER_DEVICE_CTL2		/* Device Control 2 */
 #define	PCI_EXP_DEVCTL2_LTR_EN	PCIEM_CTL2_LTR_ENABLE
 #define	PCI_EXP_DEVCTL2_COMP_TMOUT_DIS	PCIEM_CTL2_COMP_TIMO_DISABLE
+#define	PCI_EXP_DEVCTL2_ATOMIC_REQ	PCIEM_CTL2_ATOMIC_REQ_ENABLE
+#define	PCI_EXP_DEVCTL2_ATOMIC_EGRESS_BLOCK	PCIEM_CTL2_ATOMIC_EGR_BLOCK
 #define	PCI_EXP_LNKCAP2		PCIER_LINK_CAP2			/* Link Capabilities 2 */
 #define	PCI_EXP_LNKCTL2		PCIER_LINK_CTL2			/* Link Control 2 */
 #define	PCI_EXP_LNKSTA2		PCIER_LINK_STA2			/* Link Status 2 */
@@ -386,6 +388,8 @@ void linuxkpi_pci_release_region(struct pci_dev *pdev, int bar);
 void linuxkpi_pci_release_regions(struct pci_dev *pdev);
 int linuxkpi_pci_enable_msix(struct pci_dev *pdev, struct msix_entry *entries,
     int nreq);
+int linuxkpi_pci_enable_atomic_ops_to_root(struct pci_dev *pdev,
+    uint32_t cap_mask);
 
 /* Internal helper function(s). */
 struct pci_dev *lkpinew_pci_dev(device_t);
@@ -622,6 +626,8 @@ done:
     linuxkpi_pci_release_regions(pdev)
 #define	pcim_request_all_regions(pdev, name)				\
     linuxkpi_pcim_request_all_regions(pdev, name)
+#define	pci_enable_atomic_ops_to_root(pdev, cap_mask)			\
+    linuxkpi_pci_enable_atomic_ops_to_root(pdev, cap_mask)
 
 static inline void
 lkpi_pci_disable_msix(struct pci_dev *pdev)
