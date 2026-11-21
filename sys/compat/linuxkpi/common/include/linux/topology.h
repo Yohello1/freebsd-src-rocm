@@ -1,6 +1,9 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2025 The FreeBSD Foundation
  * Copyright (c) 2025 Jean-Sébastien Pédron
+ * Copyright (c) 2026 The FreeBSD Foundation
  *
  * This software was developed by Jean-Sébastien Pédron under sponsorship
  * from the FreeBSD Foundation.
@@ -30,6 +33,39 @@
 #ifndef	_LINUXKPI_LINUX_TOPOLOGY_H_
 #define	_LINUXKPI_LINUX_TOPOLOGY_H_
 
+#include <sys/param.h>
+#include <sys/smp.h>
+
+#include <vm/vm.h>
+
+#include <linux/cpumask.h>
+#include <linux/kernel.h>
+
 #include <asm/topology.h>
+
+#define	LOCAL_DISTANCE		10
+#define	REMOTE_DISTANCE		20
+#define	DISTANCE_BITS		8
+
+static inline const struct cpumask *
+cpumask_of_node(int node)
+{
+	if (node < 0)
+		return ((const struct cpumask *)&cpu_online_mask);
+	if (node >= vm_ndomains)
+		return (cpu_none_mask);
+	return ((const struct cpumask *)&cpuset_domain[node]);
+}
+
+/*
+ * The distance between NUMA nodes is not known, so only distinguish
+ * between local and remote nodes.
+ */
+static inline int
+node_distance(int from, int to)
+{
+	pr_debug("%s: TODO\n", __func__);
+	return (from == to ? LOCAL_DISTANCE : REMOTE_DISTANCE);
+}
 
 #endif /* _LINUXKPI_LINUX_TOPOLOGY_H_ */
