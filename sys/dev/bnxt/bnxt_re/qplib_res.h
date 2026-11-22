@@ -71,11 +71,6 @@ enum bnxt_qplib_wqe_mode {
 				    (mode) == BNXT_RE_PUSH_MODE_PPP)
 #define BNXT_RE_PPP_ENABLED(cctx) ((cctx)->modes.db_push_mode ==\
 				   BNXT_RE_PUSH_MODE_PPP)
-#define	PCI_EXP_DEVCTL2_ATOMIC_EGRESS_BLOCK 0x0080 /* Block atomic egress */
-#define PCI_EXP_DEVCTL2_ATOMIC_REQ	0x0040	/* Set Atomic requests */
-
-int pci_enable_atomic_ops_to_root(struct pci_dev *dev, u32 cap_mask);
-
 struct bnxt_qplib_drv_modes {
 	u8	wqe_mode;
 	u8	te_bypass;

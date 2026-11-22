@@ -1158,62 +1158,6 @@ int bnxt_qplib_map_db_bar(struct bnxt_qplib_res *res)
 	return 0;
 }
 
-/**
- * pci_enable_atomic_ops_to_root - enable AtomicOp requests to root port
- * @dev: the PCI device
- * @cap_mask: mask of desired AtomicOp sizes, including one or more of:
- *	PCI_EXP_DEVCAP2_ATOMIC_COMP32
- *	PCI_EXP_DEVCAP2_ATOMIC_COMP64
- *	PCI_EXP_DEVCAP2_ATOMIC_COMP128
- *
- * Return 0 if all upstream bridges support AtomicOp routing, egress
- * blocking is disabled on all upstream ports, and the root port supports
- * the requested completion capabilities (32-bit, 64-bit and/or 128-bit
- * AtomicOp completion), or negative otherwise.
- */
-int pci_enable_atomic_ops_to_root(struct pci_dev *dev, u32 cap_mask)
-{
-	struct pci_bus *bus = dev->bus;
-	struct pci_dev *bridge;
-	u32 cap;
-
-	if (!pci_is_pcie(dev))
-		return -EINVAL;
-
-	/*
-	 * Per PCIe r4.0, sec 6.15, endpoints and root ports may be
-	 * AtomicOp requesters.  For now, we only support endpoints as
-	 * requesters and root ports as completers.  No endpoints as
-	 * completers, and no peer-to-peer.
-	 */
-
-	switch (pci_pcie_type(dev)) {
-	case PCI_EXP_TYPE_ENDPOINT:
-	case PCI_EXP_TYPE_LEG_END:
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	bridge = bus->self;
-
-	pcie_capability_read_dword(bridge, PCI_EXP_DEVCAP2, &cap);
-
-	switch (pci_pcie_type(bridge)) {
-	case PCI_EXP_TYPE_DOWNSTREAM:
-		if (!(cap & PCI_EXP_DEVCAP2_ATOMIC_ROUTE))
-			return -EINVAL;
-		break;
-
-	/* Ensure root port supports all the sizes we care about */
-	case PCI_EXP_TYPE_ROOT_PORT:
-		if ((cap & cap_mask) != cap_mask)
-			return -EINVAL;
-		break;
-	}
-	return 0;
-}
-
 int bnxt_qplib_enable_atomic_ops_to_root(struct pci_dev *dev)
 {
 	u16 ctl2;
