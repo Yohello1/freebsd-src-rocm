@@ -162,6 +162,14 @@ idr_preload_end(void)
 static inline int
 idr_max(struct idr *idr)
 {
+	/*
+	 * With IDR_BITS == 5 a 7-layer tree spans 35 bits, more than an
+	 * int holds; 1 << 35 is undefined (x86 masks it to 1 << 3, giving
+	 * idr_max() == 7) and makes every lookup of a large id fail.
+	 * amdkfd allocates event ids starting at (INT_MAX >> 1) + 1.
+	 */
+	if (idr->layers * IDR_BITS >= MAX_IDR_SHIFT)
+		return (INT_MAX);
 	return (1 << (idr->layers * IDR_BITS)) - 1;
 }
 
@@ -587,7 +595,19 @@ restart:
 		 * to be rare.
 		 */
 		if (idx == IDR_SIZE) {
-			starting_id = id + (1 << ((layer + 1) * IDR_BITS));
+			int64_t next;
+
+			/* Same 1 << 35 overflow as idr_max() at the top layer. */
+			if ((layer + 1) * IDR_BITS >= MAX_IDR_SHIFT) {
+				error = -ENOSPC;
+				goto out;
+			}
+			next = (int64_t)id + ((int64_t)1 << ((layer + 1) * IDR_BITS));
+			if (next > INT_MAX) {
+				error = -ENOSPC;
+				goto out;
+			}
+			starting_id = (int)next;
 			goto restart;
 		}
 		if (idx > sidx)
