@@ -129,6 +129,19 @@ wake_up_task(struct task_struct *task, unsigned int state)
 	return (ret);
 }
 
+/* Process is exiting (or exec'ing) and td is not the thread doing it. */
+static bool
+linux_proc_exiting(struct thread *td)
+{
+	struct proc *p = td->td_proc;
+
+	PROC_LOCK_ASSERT(p, MA_OWNED);
+	if ((p->p_flag & P_WEXIT) != 0 && p->p_singlethread != td)
+		return (true);
+	return ((p->p_flag & P_SINGLE_EXIT) != 0 &&
+	    p->p_singlethread != td);
+}
+
 bool
 linux_signal_pending(struct task_struct *task)
 {
@@ -137,6 +150,15 @@ linux_signal_pending(struct task_struct *task)
 
 	td = task->task_thread;
 	PROC_LOCK(td->td_proc);
+	/*
+	 * Linux delivers SIGKILL to all other threads on exit; FreeBSD
+	 * single-threads the process instead.  Report a pending signal so
+	 * that LinuxKPI wait loops bail out and let thread_single() finish.
+	 */
+	if (linux_proc_exiting(td)) {
+		PROC_UNLOCK(td->td_proc);
+		return (true);
+	}
 	pending = td->td_siglist;
 	SIGSETOR(pending, td->td_proc->p_siglist);
 	SIGSETNAND(pending, td->td_sigmask);
@@ -153,7 +175,8 @@ linux_fatal_signal_pending(struct task_struct *task)
 	td = task->task_thread;
 	PROC_LOCK(td->td_proc);
 	ret = SIGISMEMBER(td->td_siglist, SIGKILL) ||
-	    SIGISMEMBER(td->td_proc->p_siglist, SIGKILL);
+	    SIGISMEMBER(td->td_proc->p_siglist, SIGKILL) ||
+	    linux_proc_exiting(td);
 	PROC_UNLOCK(td->td_proc);
 	return (ret);
 }
