@@ -137,9 +137,12 @@ MODULE_PNP_INFO("U32:vendor;U32:device;V32:subvendor;V32:subdevice",	\
 #define	PCI_EXP_DEVCAP2		PCIER_DEVICE_CAP2		/* Device Capabilities 2 */
 #define	PCI_EXP_DEVCAP2_ATOMIC_COMP32		0x00000080		/* Device Capabilities 2 */
 #define	PCI_EXP_DEVCAP2_ATOMIC_COMP64		0x00000100		/* Device Capabilities 2 */
+#define	PCI_EXP_DEVCAP2_ATOMIC_ROUTE		0x00000040		/* Device Capabilities 2 */
 #define	PCI_EXP_DEVCTL2		PCIER_DEVICE_CTL2		/* Device Control 2 */
 #define	PCI_EXP_DEVCTL2_LTR_EN	PCIEM_CTL2_LTR_ENABLE
 #define	PCI_EXP_DEVCTL2_COMP_TMOUT_DIS	PCIEM_CTL2_COMP_TIMO_DISABLE
+#define	PCI_EXP_DEVCTL2_ATOMIC_REQ	PCIEM_CTL2_ATOMIC_REQ_ENABLE
+#define	PCI_EXP_DEVCTL2_ATOMIC_EGRESS_BLOCK	PCIEM_CTL2_ATOMIC_EGR_BLOCK
 #define	PCI_EXP_LNKCAP2		PCIER_LINK_CAP2			/* Link Capabilities 2 */
 #define	PCI_EXP_LNKCTL2		PCIER_LINK_CTL2			/* Link Control 2 */
 #define	PCI_EXP_LNKSTA2		PCIER_LINK_STA2			/* Link Status 2 */
@@ -149,6 +152,7 @@ MODULE_PNP_INFO("U32:vendor;U32:device;V32:subvendor;V32:subdevice",	\
 #define	PCI_EXP_TYPE_ENDPOINT	PCIEM_TYPE_ENDPOINT		/* Express Endpoint */
 #define	PCI_EXP_TYPE_LEG_END	PCIEM_TYPE_LEGACY_ENDPOINT	/* Legacy Endpoint */
 #define	PCI_EXP_TYPE_DOWNSTREAM PCIEM_TYPE_DOWNSTREAM_PORT	/* Downstream Port */
+#define	PCI_EXP_TYPE_UPSTREAM	PCIEM_TYPE_UPSTREAM_PORT	/* Upstream Port */
 #define	PCI_EXP_FLAGS_SLOT	PCIEM_FLAGS_SLOT		/* Slot implemented */
 #define	PCI_EXP_TYPE_RC_EC	PCIEM_TYPE_ROOT_EC		/* Root Complex Event Collector */
 #define	PCI_EXP_LNKSTA_CLS	PCIEM_LINK_STA_SPEED
@@ -384,6 +388,8 @@ void linuxkpi_pci_release_region(struct pci_dev *pdev, int bar);
 void linuxkpi_pci_release_regions(struct pci_dev *pdev);
 int linuxkpi_pci_enable_msix(struct pci_dev *pdev, struct msix_entry *entries,
     int nreq);
+int linuxkpi_pci_enable_atomic_ops_to_root(struct pci_dev *pdev,
+    uint32_t cap_mask);
 
 /* Internal helper function(s). */
 struct pci_dev *lkpinew_pci_dev(device_t);
@@ -580,6 +586,8 @@ done:
     linuxkpi_pci_release_regions(pdev)
 #define	pcim_request_all_regions(pdev, name)				\
     linuxkpi_pcim_request_all_regions(pdev, name)
+#define	pci_enable_atomic_ops_to_root(pdev, cap_mask)			\
+    linuxkpi_pci_enable_atomic_ops_to_root(pdev, cap_mask)
 
 static inline void
 lkpi_pci_disable_msix(struct pci_dev *pdev)
