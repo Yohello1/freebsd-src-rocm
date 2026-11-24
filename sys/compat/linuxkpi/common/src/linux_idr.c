@@ -354,20 +354,49 @@ idr_find(struct idr *idr, int id)
 	return (res);
 }
 
+/*
+ * Return the entry with the lowest id >= minid in the subtree rooted at il,
+ * which covers the ids starting at base, and store its id in *idp.  Empty
+ * subtrees are skipped, so sparse ids (amdkfd allocates event ids above
+ * 2^30) do not cost one lookup per possible id.
+ */
+static void *
+idr_get_next_layer(struct idr_layer *il, int layer, int64_t base, int minid,
+    int *idp)
+{
+	int64_t span;
+	void *res;
+	int i;
+
+	span = (int64_t)1 << (layer * IDR_BITS);
+	for (i = 0; i < IDR_SIZE; i++) {
+		if (il->ary[i] == NULL || base + (i + 1) * span - 1 < minid)
+			continue;
+		if (layer == 0) {
+			*idp = (int)(base + i);
+			return (il->ary[i]);
+		}
+		res = idr_get_next_layer(il->ary[i], layer - 1, base + i * span,
+		    minid, idp);
+		if (res != NULL)
+			return (res);
+	}
+	return (NULL);
+}
+
 void *
 idr_get_next(struct idr *idr, int *nextidp)
 {
-	void *res = NULL;
-	int id = *nextidp;
+	void *res;
 
+	if (*nextidp < 0)
+		return (NULL);
 	IDR_LOCK(idr);
-	for (; id <= idr_max(idr); id++) {
-		res = idr_find_locked(idr, id);
-		if (res == NULL)
-			continue;
-		*nextidp = id;
-		break;
-	}
+	if (idr->top == NULL)
+		res = NULL;
+	else
+		res = idr_get_next_layer(idr->top, idr->layers - 1, 0,
+		    *nextidp, nextidp);
 	IDR_UNLOCK(idr);
 	return (res);
 }
