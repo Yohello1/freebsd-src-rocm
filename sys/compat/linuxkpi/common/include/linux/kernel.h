@@ -252,6 +252,16 @@ extern int linuxkpi_debug;
 		pr_warning(__VA_ARGS__);	\
 } while (0)
 
+#ifdef DEBUG
+#define	pr_debug_ratelimited(fmt, ...) do {			\
+	static linux_ratelimit_t __ratelimited;			\
+	if (linuxkpi_debug && linux_ratelimited(&__ratelimited))	\
+		log(LOG_DEBUG, fmt, ##__VA_ARGS__);		\
+} while (0)
+#else
+#define	pr_debug_ratelimited(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
+#endif
+
 #ifndef WARN
 #define	WARN(condition, ...) ({			\
 	bool __ret_warn_on = (condition);	\
