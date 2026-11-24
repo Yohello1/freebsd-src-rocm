@@ -1,0 +1,5 @@
+include GENERIC
+ident LOOPDEBUG
+
+# pi-loop hang mitigation: panic if watchdogd stops patting /dev/fido.
+options SW_WATCHDOG
