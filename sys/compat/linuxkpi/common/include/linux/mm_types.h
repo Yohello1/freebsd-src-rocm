@@ -36,6 +36,7 @@
 
 typedef int vm_fault_t;
 
+struct mmu_notifier_subscriptions;
 struct vm_area_struct;
 struct task_struct;
 
@@ -46,6 +47,7 @@ struct mm_struct {
 	size_t pinned_vm;
 	/* Renamed to mmap_lock in v5.8 */
 	struct rw_semaphore mmap_sem;
+	struct mmu_notifier_subscriptions *notifier_subscriptions;
 };
 
 extern void linux_mm_dtor(struct mm_struct *mm);
