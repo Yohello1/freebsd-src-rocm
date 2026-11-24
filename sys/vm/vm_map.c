@@ -131,6 +131,7 @@ static void _vm_map_init(vm_map_t map, pmap_t pmap, vm_offset_t min,
 static void vm_map_entry_deallocate(vm_map_entry_t entry, boolean_t system_map);
 static void vm_map_entry_dispose(vm_map_t map, vm_map_entry_t entry);
 static void vm_map_entry_unwire(vm_map_t map, vm_map_entry_t entry);
+static void vm_map_notify_release(vm_map_t map);
 static int vm_map_growstack(vm_map_t map, vm_offset_t addr,
     vm_map_entry_t gap_entry);
 static void vm_map_pmap_enter(vm_map_t map, vm_offset_t addr, vm_prot_t prot,
@@ -310,6 +311,8 @@ vmspace_zdtor(void *mem, int size, void *arg)
 	    ("vmspace %p nentries == %d on free", vm, vm->vm_map.nentries));
 	KASSERT(vm->vm_map.size == 0,
 	    ("vmspace %p size == %ju on free", vm, (uintmax_t)vm->vm_map.size));
+	KASSERT(TAILQ_EMPTY(&vm->vm_map.notifiers),
+	    ("vmspace %p has notifiers on free", vm));
 }
 #endif	/* INVARIANTS */
 
@@ -368,6 +371,8 @@ vmspace_dofree(struct vmspace *vm)
 	 * exit1().
 	 */
 	shmexit(vm);
+
+	vm_map_notify_release(&vm->vm_map);
 
 	/*
 	 * Lock the map, to wait out all other references to it.
@@ -896,6 +901,7 @@ _vm_map_init(vm_map_t map, pmap_t pmap, vm_offset_t min, vm_offset_t max)
 	map->timestamp = 0;
 	map->busy = 0;
 	map->anon_loc = 0;
+	TAILQ_INIT(&map->notifiers);
 #ifdef DIAGNOSTIC
 	map->nupdates = 0;
 #endif
@@ -915,6 +921,120 @@ vm_map_init_system(vm_map_t map, pmap_t pmap, vm_offset_t min, vm_offset_t max)
 	vm_map_modflags(map, MAP_SYSTEM_MAP, 0);
 	mtx_init(&map->system_mtx, "vm map (system)", NULL, MTX_DEF |
 	    MTX_DUPOK);
+}
+
+/*
+ *	vm_map_notifier_register:
+ *
+ *	Register a notifier for changes to the user map "map".  See the
+ *	description of struct vm_map_notifier_ops in vm_map.h.  The caller
+ *	must hold a reference on the map's vmspace.
+ */
+void
+vm_map_notifier_register(vm_map_t map, struct vm_map_notifier *n)
+{
+
+	KASSERT(!vm_map_is_system(map),
+	    ("%s: system map %p", __func__, map));
+	KASSERT(n->ops != NULL && n->ops->invalidate_start != NULL &&
+	    n->ops->invalidate_end != NULL && n->ops->release != NULL,
+	    ("%s: incomplete ops for notifier %p", __func__, n));
+	vm_map_lock(map);
+	TAILQ_INSERT_TAIL(&map->notifiers, n, link);
+	vm_map_unlock(map);
+}
+
+/*
+ *	vm_map_notifier_unregister:
+ *
+ *	Unregister a notifier that has not been released yet.  The caller
+ *	must hold a reference on the map's vmspace, which guarantees that
+ *	the notifier cannot be released concurrently.  Upon return, no
+ *	invalidate callbacks for the notifier are in progress.
+ */
+void
+vm_map_notifier_unregister(vm_map_t map, struct vm_map_notifier *n)
+{
+
+	vm_map_lock(map);
+	TAILQ_REMOVE(&map->notifiers, n, link);
+	vm_map_unlock(map);
+}
+
+static void
+vm_map_notify_invalidate_start_slow(vm_map_t map, vm_offset_t start,
+    vm_offset_t end, enum vm_map_notify_event event)
+{
+	struct vm_map_notifier *n;
+
+	TAILQ_FOREACH(n, &map->notifiers, link)
+		n->ops->invalidate_start(n, map, start, end, event);
+}
+
+static void
+vm_map_notify_invalidate_end_slow(vm_map_t map, vm_offset_t start,
+    vm_offset_t end, enum vm_map_notify_event event)
+{
+	struct vm_map_notifier *n;
+
+	TAILQ_FOREACH(n, &map->notifiers, link)
+		n->ops->invalidate_end(n, map, start, end, event);
+}
+
+/*
+ * Notify the map's notifiers, if any, that the pages mapped in [start, end)
+ * are about to change.  The map must be locked exclusively, or shared for
+ * VM_MAP_NOTIFY_CLEAR.  Must be paired with vm_map_notify_invalidate_end().
+ */
+static inline void
+vm_map_notify_invalidate_start(vm_map_t map, vm_offset_t start,
+    vm_offset_t end, enum vm_map_notify_event event)
+{
+
+	if (__predict_true(TAILQ_EMPTY(&map->notifiers)))
+		return;
+	MPASS(start < end);
+	if (event == VM_MAP_NOTIFY_CLEAR)
+		sx_assert(&map->lock, SA_LOCKED);
+	else
+		VM_MAP_ASSERT_LOCKED(map);
+	vm_map_notify_invalidate_start_slow(map, start, end, event);
+}
+
+static inline void
+vm_map_notify_invalidate_end(vm_map_t map, vm_offset_t start,
+    vm_offset_t end, enum vm_map_notify_event event)
+{
+
+	if (__predict_true(TAILQ_EMPTY(&map->notifiers)))
+		return;
+	vm_map_notify_invalidate_end_slow(map, start, end, event);
+}
+
+/*
+ * The address space is being destroyed: unregister every notifier and call
+ * its release callback.  The callback is called without the map lock held
+ * so that it may tear down the consumer's state without lock order
+ * constraints against the map lock.  No new notifiers can be registered,
+ * since the vmspace has no references left.
+ */
+static void
+vm_map_notify_release(vm_map_t map)
+{
+	struct vm_map_notifier *n;
+
+	if (__predict_true(TAILQ_EMPTY(&map->notifiers)))
+		return;
+	for (;;) {
+		vm_map_lock(map);
+		n = TAILQ_FIRST(&map->notifiers);
+		if (n != NULL)
+			TAILQ_REMOVE(&map->notifiers, n, link);
+		vm_map_unlock(map);
+		if (n == NULL)
+			break;
+		n->ops->release(n, map);
+	}
 }
 
 /*
@@ -2818,6 +2938,7 @@ vm_map_protect(vm_map_t map, vm_offset_t start, vm_offset_t end,
 	vm_offset_t orig_start;
 	vm_prot_t check_prot, max_prot, old_prot;
 	int rv;
+	bool notify;
 
 	if (start == end)
 		return (KERN_SUCCESS);
@@ -3004,6 +3125,18 @@ again:
 			entry->protection = new_prot;
 
 		/*
+		 * Both restricting access and the copy of user wired
+		 * copy-on-write pages below change what is mapped.
+		 */
+		notify = (old_prot & ~entry->protection) != 0 ||
+		    ((entry->eflags & MAP_ENTRY_USER_WIRED) != 0 &&
+		    (entry->protection & VM_PROT_WRITE) != 0 &&
+		    (old_prot & VM_PROT_WRITE) == 0);
+		if (notify)
+			vm_map_notify_invalidate_start(map, entry->start,
+			    entry->end, VM_MAP_NOTIFY_PROTECT);
+
+		/*
 		 * For user wired map entries, the normal lazy evaluation of
 		 * write access upgrades through soft page faults is
 		 * undesirable.  Instead, immediately copy any pages that are
@@ -3026,6 +3159,9 @@ again:
 			    entry->protection & MASK(entry));
 #undef	MASK
 		}
+		if (notify)
+			vm_map_notify_invalidate_end(map, entry->start,
+			    entry->end, VM_MAP_NOTIFY_PROTECT);
 	}
 	vm_map_try_merge_entries(map, prev_entry, entry);
 	vm_map_unlock(map);
@@ -3202,12 +3338,18 @@ vm_map_madvise(
 			 * referenced based upon an old reference that
 			 * occurred before this pmap_advise() ran.
 			 */
-			if (behav == MADV_DONTNEED || behav == MADV_FREE)
+			if (behav == MADV_DONTNEED || behav == MADV_FREE) {
+				vm_map_notify_invalidate_start(map, useStart,
+				    useEnd, VM_MAP_NOTIFY_CLEAR);
 				pmap_advise(map->pmap, useStart, useEnd,
 				    behav);
+			}
 
 			vm_object_madvise(entry->object.vm_object, pstart,
 			    pend, behav);
+			if (behav == MADV_DONTNEED || behav == MADV_FREE)
+				vm_map_notify_invalidate_end(map, useStart,
+				    useEnd, VM_MAP_NOTIFY_CLEAR);
 
 			/*
 			 * Pre-populate paging structures in the
@@ -4021,7 +4163,9 @@ int
 vm_map_delete(vm_map_t map, vm_offset_t start, vm_offset_t end)
 {
 	vm_map_entry_t entry, next_entry, scratch_entry;
+	vm_offset_t e_end, e_start;
 	int rv;
+	bool notify;
 
 	VM_MAP_ASSERT_LOCKED(map);
 
@@ -4075,6 +4219,19 @@ vm_map_delete(vm_map_t map, vm_offset_t start, vm_offset_t end)
 		next_entry = vm_map_entry_succ(entry);
 
 		/*
+		 * Only entries with an object can have pages that a
+		 * notifier may be using.
+		 */
+		notify = entry->object.vm_object != NULL &&
+		    (entry->eflags & MAP_ENTRY_IS_SUB_MAP) == 0;
+		if (notify) {
+			e_start = entry->start;
+			e_end = entry->end;
+			vm_map_notify_invalidate_start(map, e_start, e_end,
+			    VM_MAP_NOTIFY_UNMAP);
+		}
+
+		/*
 		 * Unwire before removing addresses from the pmap; otherwise,
 		 * unwiring will put the entries back in the pmap.
 		 */
@@ -4097,6 +4254,9 @@ vm_map_delete(vm_map_t map, vm_offset_t start, vm_offset_t end)
 		 * will be set in the wrong object!)
 		 */
 		vm_map_entry_delete(map, entry);
+		if (notify)
+			vm_map_notify_invalidate_end(map, e_start, e_end,
+			    VM_MAP_NOTIFY_UNMAP);
 	}
 	return (rv);
 }
@@ -4277,10 +4437,16 @@ vm_map_copy_entry(
 		 */
 		if ((src_entry->eflags & MAP_ENTRY_NEEDS_COPY) == 0 &&
 		    (src_entry->protection & VM_PROT_WRITE) != 0) {
+			vm_map_notify_invalidate_start(src_map,
+			    src_entry->start, src_entry->end,
+			    VM_MAP_NOTIFY_PROTECT);
 			pmap_protect(src_map->pmap,
 			    src_entry->start,
 			    src_entry->end,
 			    src_entry->protection & ~VM_PROT_WRITE);
+			vm_map_notify_invalidate_end(src_map,
+			    src_entry->start, src_entry->end,
+			    VM_MAP_NOTIFY_PROTECT);
 		}
 
 		/*
