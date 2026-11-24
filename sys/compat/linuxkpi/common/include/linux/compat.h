@@ -26,12 +26,12 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef	_LINUXKPI_LINUX_COMPAT_H_
-#define	_LINUXKPI_LINUX_COMPAT_H_
+#ifndef _LINUXKPI_LINUX_COMPAT_H_
+#define _LINUXKPI_LINUX_COMPAT_H_
 
 #include <sys/param.h>
-#include <sys/proc.h>
 #include <sys/malloc.h>
+#include <sys/proc.h>
 #include <sys/sysent.h>
 
 struct domainset;
@@ -42,8 +42,7 @@ extern int linux_alloc_current(struct thread *, int flags);
 extern void linux_free_current(struct task_struct *);
 extern struct domainset *linux_get_vm_domain_set(int node);
 
-#define	__current_unallocated(td)	\
-	__predict_false((td)->td_lkpi_task == NULL)
+#define __current_unallocated(td) __predict_false((td)->td_lkpi_task == NULL)
 
 static inline void
 linux_set_current(struct thread *td)
@@ -60,8 +59,8 @@ linux_set_current_flags(struct thread *td, int flags)
 	return (0);
 }
 
-#define	compat_ptr(x)		((void *)(uintptr_t)x)
-#define	ptr_to_compat(x)	((uintptr_t)x)
+#define compat_ptr(x)	 ((void *)(uintptr_t)x)
+#define ptr_to_compat(x) ((uintptr_t)x)
 
 typedef void fpu_safe_exec_cb_t(void *ctx);
 void lkpi_fpu_safe_exec(fpu_safe_exec_cb_t func, void *ctx);
@@ -75,4 +74,4 @@ in_compat_syscall(void)
 	return (false);
 #endif /* __amd64__ || __aarch64__ */
 }
-#endif	/* _LINUXKPI_LINUX_COMPAT_H_ */
+#endif /* _LINUXKPI_LINUX_COMPAT_H_ */
