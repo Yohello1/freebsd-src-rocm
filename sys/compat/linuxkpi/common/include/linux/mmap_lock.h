@@ -45,10 +45,31 @@ mmap_read_unlock(struct mm_struct *mm)
 }
 
 static inline void
+mmap_write_lock(struct mm_struct *mm)
+{
+
+	down_write(&mm->mmap_sem);
+}
+
+static inline void
 mmap_write_lock_killable(struct mm_struct *mm)
 {
 
 	down_write_killable(&mm->mmap_sem);
+}
+
+static inline void
+mmap_write_unlock(struct mm_struct *mm)
+{
+
+	up_write(&mm->mmap_sem);
+}
+
+static inline void
+mmap_write_downgrade(struct mm_struct *mm)
+{
+
+	downgrade_write(&mm->mmap_sem);
 }
 
 #endif	/* _LINUXKPI_LINUX_MMAP_LOCK_H_ */
