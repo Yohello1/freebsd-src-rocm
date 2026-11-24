@@ -153,6 +153,13 @@ linux_get_task_mm(struct task_struct *task)
 {
 	struct mm_struct *mm;
 
+	/*
+	 * Linux clears task->mm in exit_mm(), early in do_exit(), so
+	 * get_task_mm() fails once the task has started to exit.  Mirror
+	 * that for a process that is exiting.
+	 */
+	if (linux_task_exiting(task))
+		return (NULL);
 	mm = task->mm;
 	if (mm != NULL) {
 		atomic_inc(&mm->mm_users);
