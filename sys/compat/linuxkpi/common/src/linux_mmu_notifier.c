@@ -439,12 +439,17 @@ lkpi_mn_vm_release(struct vm_map_notifier *n, vm_map_t map __unused)
 	mtx_lock(&subs->lock);
 	subs->vm = NULL;
 	mtx_unlock(&subs->lock);
+	/*
+	 * As in Linux __mmu_notifier_release(), the interval notifiers are
+	 * invalidated before the classic notifiers are released, so that
+	 * their owners still exist when the invalidate callbacks run.
+	 */
 	seq = lkpi_mn_invalidate_begin(subs);
+	lkpi_mn_invalidate_itree(subs, &range, seq);
 	hlist_for_each_entry(mn, &subs->list, hlist) {
 		if (mn->ops->release != NULL)
 			mn->ops->release(mn, mm);
 	}
-	lkpi_mn_invalidate_itree(subs, &range, seq);
 	lkpi_mn_invalidate_end(subs, true);
 	mmdrop(mm);
 }
