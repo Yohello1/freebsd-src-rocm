@@ -65,6 +65,7 @@
 #define	_VM_MAP_
 
 #include <sys/lock.h>
+#include <sys/queue.h>
 #include <sys/sx.h>
 #include <sys/_mutex.h>
 
@@ -199,7 +200,11 @@ vm_map_entry_system_wired_count(vm_map_entry_t entry)
  *
  *	List of locks
  *	(c)	const until freed
+ *	(m)	map lock; exclusive to modify, shared or exclusive to read
  */
+struct vm_map_notifier;
+TAILQ_HEAD(vm_map_notifier_list, vm_map_notifier);
+
 struct vm_map {
 	struct vm_map_entry header;	/* List of entries */
 	union {
@@ -214,9 +219,58 @@ struct vm_map {
 	pmap_t pmap;			/* (c) Physical map */
 	vm_offset_t anon_loc;
 	int busy;
+	struct vm_map_notifier_list notifiers; /* (m) change notifiers */
 #ifdef DIAGNOSTIC
 	int nupdates;
 #endif
+};
+
+/*
+ * Address space change notifiers.
+ *
+ * A notifier lets a subsystem that maintains its own translations of a
+ * user address space (for example, a device with its own MMU) learn
+ * when the pages mapped at a virtual address range may be about to
+ * change, so that it can stop using them.  Notifiers are registered on
+ * a user map with vm_map_notifier_register() and are not inherited by
+ * vmspace_fork().
+ *
+ * invalidate_start() is called before the mappings of [start, end) are
+ * removed, write-protected or have their pages released, and
+ * invalidate_end() is called after the change has been made; the event
+ * argument tells why.  When invalidate_start() returns, the consumer
+ * must no longer access the pages it obtained for the range, and it
+ * must not establish new translations for the range until the matching
+ * invalidate_end() call.  Both are called with the map lock held:
+ * exclusively, except for VM_MAP_NOTIFY_CLEAR, which is called with the
+ * map lock held shared.  They may sleep, but must not acquire the map
+ * lock or fault on the map.
+ *
+ * release() is called once, without the map lock held, when the last
+ * reference to the vmspace is dropped and the address space is being
+ * torn down.  The notifier has been unregistered at that point and no
+ * other callbacks follow.  Since register and unregister require a
+ * reference on the vmspace, a consumer that may unregister concurrently
+ * with release() must acquire that reference with
+ * refcount_acquire_if_not_zero() and otherwise wait for release().
+ */
+enum vm_map_notify_event {
+	VM_MAP_NOTIFY_UNMAP,	/* mappings are being removed */
+	VM_MAP_NOTIFY_PROTECT,	/* access is being restricted (incl. COW) */
+	VM_MAP_NOTIFY_CLEAR,	/* pages may be discarded (madvise) */
+};
+
+struct vm_map_notifier_ops {
+	void	(*invalidate_start)(struct vm_map_notifier *, vm_map_t,
+		    vm_offset_t, vm_offset_t, enum vm_map_notify_event);
+	void	(*invalidate_end)(struct vm_map_notifier *, vm_map_t,
+		    vm_offset_t, vm_offset_t, enum vm_map_notify_event);
+	void	(*release)(struct vm_map_notifier *, vm_map_t);
+};
+
+struct vm_map_notifier {
+	const struct vm_map_notifier_ops *ops;
+	TAILQ_ENTRY(vm_map_notifier) link;	/* (m) */
 };
 
 /*
@@ -496,6 +550,8 @@ vm_offset_t vm_map_findspace(vm_map_t, vm_offset_t, vm_size_t);
 int vm_map_inherit (vm_map_t, vm_offset_t, vm_offset_t, vm_inherit_t);
 void vm_map_init(vm_map_t, pmap_t, vm_offset_t, vm_offset_t);
 void vm_map_init_system(vm_map_t, pmap_t, vm_offset_t, vm_offset_t);
+void vm_map_notifier_register(vm_map_t, struct vm_map_notifier *);
+void vm_map_notifier_unregister(vm_map_t, struct vm_map_notifier *);
 int vm_map_insert (vm_map_t, vm_object_t, vm_ooffset_t, vm_offset_t, vm_offset_t, vm_prot_t, vm_prot_t, int);
 int vm_map_lookup (vm_map_t *, vm_offset_t, vm_prot_t, vm_map_entry_t *, vm_object_t *,
     vm_pindex_t *, vm_prot_t *, boolean_t *);
