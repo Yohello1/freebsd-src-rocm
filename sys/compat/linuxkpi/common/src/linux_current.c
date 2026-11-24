@@ -172,6 +172,7 @@ void
 linux_free_current(struct task_struct *ts)
 {
 	mmput(ts->mm);
+	kfree(ts->bsd_vma);
 	uma_zfree(linux_current_zone, ts);
 }
 

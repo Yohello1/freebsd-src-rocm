@@ -98,6 +98,9 @@ mmgrab(struct mm_struct *mm)
 extern struct mm_struct *linux_get_task_mm(struct task_struct *);
 #define	get_task_mm(task) linux_get_task_mm(task)
 
+struct vmspace;
+extern struct vmspace *linux_mm_vmspace_acquire(struct mm_struct *);
+
 struct folio {
 	/*
 	 * The page member must be at the beginning because `page_folio(p)`

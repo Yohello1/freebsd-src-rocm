@@ -125,7 +125,12 @@ struct vm_area_struct {
 	vm_object_t vm_obj;
 	vm_map_t vm_cached_map;
 	TAILQ_ENTRY(vm_area_struct) vm_entry;
+	unsigned int vm_bsd_flags;	/* LKPI_VMA_* */
 };
+
+/* vm_bsd_flags of vma_lookup() snapshots */
+#define	LKPI_VMA_INITIAL_HEAP	0x0001
+#define	LKPI_VMA_INITIAL_STACK	0x0002
 
 struct vm_fault {
 	unsigned int flags;
@@ -381,6 +386,32 @@ static inline pgprot_t
 vm_get_page_prot(unsigned long vm_flags)
 {
 	return (vm_flags & VM_PROT_ALL);
+}
+
+struct vm_area_struct *lkpi_vma_lookup(struct mm_struct *mm,
+    unsigned long addr);
+
+/*
+ * Ordinary mappings have no struct vm_area_struct on FreeBSD.  vma_lookup()
+ * returns a snapshot of the vm_map entry containing addr instead, see
+ * lkpi_vma_lookup().
+ */
+static inline struct vm_area_struct *
+vma_lookup(struct mm_struct *mm, unsigned long addr)
+{
+	return (lkpi_vma_lookup(mm, addr));
+}
+
+static inline bool
+vma_is_initial_heap(const struct vm_area_struct *vma)
+{
+	return ((vma->vm_bsd_flags & LKPI_VMA_INITIAL_HEAP) != 0);
+}
+
+static inline bool
+vma_is_initial_stack(const struct vm_area_struct *vma)
+{
+	return ((vma->vm_bsd_flags & LKPI_VMA_INITIAL_STACK) != 0);
 }
 
 static inline void
