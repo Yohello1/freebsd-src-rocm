@@ -159,6 +159,17 @@ linux_signal_pending(struct task_struct *task)
 		PROC_UNLOCK(td->td_proc);
 		return (true);
 	}
+	/*
+	 * Likewise for a pending suspension request (single-threading for
+	 * a core dump, fork or exec, or a stop signal): interruptible
+	 * sleeps are aborted for it, so the caller must return to the user
+	 * boundary where the thread can suspend.  The system call is
+	 * restarted afterwards.
+	 */
+	if (td_ast_pending(td, TDA_SUSPEND)) {
+		PROC_UNLOCK(td->td_proc);
+		return (true);
+	}
 	pending = td->td_siglist;
 	SIGSETOR(pending, td->td_proc->p_siglist);
 	SIGSETNAND(pending, td->td_sigmask);
