@@ -30,19 +30,52 @@
 #ifndef _LINUXKPI_LINUX_MMU_NOTIFIER_H_
 #define	_LINUXKPI_LINUX_MMU_NOTIFIER_H_
 
+#include <linux/compiler.h>
 #include <linux/err.h>
 #include <linux/errno.h>
+#include <linux/interval_tree.h>
 #include <linux/kernel.h>
-
-struct mm_struct;
-struct mmu_notifier;
-struct mmu_notifier_range;
+#include <linux/list.h>
+#include <linux/mm_types.h>
+#include <linux/rcupdate.h>
 
 /*
- * MMU notifiers are not implemented.  Only enough of the interface is
- * provided to manage the lifetime of a notifier: the release and
- * invalidate callbacks are never called.
+ * MMU notifiers, see Linux include/linux/mmu_notifier.h and
+ * mm/mmu_notifier.c.  They are implemented on top of the vm_map
+ * notifiers of the FreeBSD VM: the notifier state of an mm_struct is bound
+ * to the vmspace of the process that first subscribes, and invalidations
+ * are reported when the mappings of that vmspace are removed, write
+ * protected (including copy-on-write at fork) or discarded with
+ * madvise(2).  Invalidations are always blockable.
  */
+
+struct mmu_notifier;
+struct mmu_notifier_range;
+struct mmu_interval_notifier;
+struct mmu_notifier_subscriptions;
+
+enum mmu_notifier_event {
+	MMU_NOTIFY_UNMAP = 0,
+	MMU_NOTIFY_CLEAR,
+	MMU_NOTIFY_PROTECTION_VMA,
+	MMU_NOTIFY_PROTECTION_PAGE,
+	MMU_NOTIFY_SOFT_DIRTY,
+	MMU_NOTIFY_RELEASE,
+	MMU_NOTIFY_MIGRATE,
+	MMU_NOTIFY_EXCLUSIVE,
+};
+
+#define	MMU_NOTIFIER_RANGE_BLOCKABLE	(1 << 0)
+
+struct mmu_notifier_range {
+	struct mm_struct *mm;
+	unsigned long start;
+	unsigned long end;
+	unsigned flags;
+	enum mmu_notifier_event event;
+	void *owner;
+};
+
 struct mmu_notifier_ops {
 	void	(*release)(struct mmu_notifier *, struct mm_struct *);
 	int	(*invalidate_range_start)(struct mmu_notifier *,
@@ -54,57 +87,97 @@ struct mmu_notifier_ops {
 };
 
 struct mmu_notifier {
-	const struct mmu_notifier_ops	*ops;
-	struct mm_struct		*mm;
+	struct hlist_node hlist;
+	const struct mmu_notifier_ops *ops;
+	struct mm_struct *mm;
+	struct rcu_head rcu;
+	unsigned int users;
+};
+
+struct mmu_interval_notifier_ops {
+	bool	(*invalidate)(struct mmu_interval_notifier *,
+		    const struct mmu_notifier_range *, unsigned long);
+};
+
+struct mmu_interval_notifier {
+	struct interval_tree_node interval_tree;
+	const struct mmu_interval_notifier_ops *ops;
+	struct mm_struct *mm;
+	struct hlist_node deferred_item;
+	unsigned long invalidate_seq;
+	/* LinuxKPI private, see linux_mmu_notifier.c. */
+	int lkpi_deferred_op;
+	struct vm_page **lkpi_held;
 };
 
 static inline int
-mmu_notifier_register(struct mmu_notifier *mn __unused,
-    struct mm_struct *mm __unused)
+mm_has_notifiers(struct mm_struct *mm)
 {
-	pr_debug("%s: TODO\n", __func__);
-	return (-EINVAL);
+	return (READ_ONCE(mm->notifier_subscriptions) != NULL);
 }
 
-static inline void
-mmu_notifier_unregister(struct mmu_notifier *mn __unused,
-    struct mm_struct *mm __unused)
+static inline bool
+mmu_notifier_range_blockable(const struct mmu_notifier_range *range)
 {
-	pr_debug("%s: TODO\n", __func__);
+	return ((range->flags & MMU_NOTIFIER_RANGE_BLOCKABLE) != 0);
 }
 
-/*
- * Unlike on Linux, notifiers are not shared: every call allocates a new
- * notifier using the alloc_notifier callback.
- */
+int	mmu_notifier_register(struct mmu_notifier *, struct mm_struct *);
+int	__mmu_notifier_register(struct mmu_notifier *, struct mm_struct *);
+void	mmu_notifier_unregister(struct mmu_notifier *, struct mm_struct *);
+struct mmu_notifier *mmu_notifier_get_locked(const struct mmu_notifier_ops *,
+	    struct mm_struct *);
+void	mmu_notifier_put(struct mmu_notifier *);
+void	mmu_notifier_synchronize(void);
+
 static inline struct mmu_notifier *
 mmu_notifier_get(const struct mmu_notifier_ops *ops, struct mm_struct *mm)
 {
 	struct mmu_notifier *mn;
 
-	pr_debug("%s: TODO\n", __func__);
-	if (ops->alloc_notifier == NULL)
-		return (ERR_PTR(-EINVAL));
-	mn = ops->alloc_notifier(mm);
-	if (IS_ERR(mn))
-		return (mn);
-	mn->ops = ops;
-	mn->mm = mm;
+	down_write(&mm->mmap_sem);
+	mn = mmu_notifier_get_locked(ops, mm);
+	up_write(&mm->mmap_sem);
 	return (mn);
 }
 
+int	mmu_interval_notifier_insert(struct mmu_interval_notifier *,
+	    struct mm_struct *, unsigned long, unsigned long,
+	    const struct mmu_interval_notifier_ops *);
+int	mmu_interval_notifier_insert_locked(struct mmu_interval_notifier *,
+	    struct mm_struct *, unsigned long, unsigned long,
+	    const struct mmu_interval_notifier_ops *);
+void	mmu_interval_notifier_remove(struct mmu_interval_notifier *);
+unsigned long mmu_interval_read_begin(struct mmu_interval_notifier *);
+
+/*
+ * Called by the invalidate() callback, under the driver lock that is also
+ * held around mmu_interval_read_retry().  cur_seq is always odd.
+ */
 static inline void
-mmu_notifier_put(struct mmu_notifier *mn)
+mmu_interval_set_seq(struct mmu_interval_notifier *mni, unsigned long cur_seq)
 {
-	pr_debug("%s: TODO\n", __func__);
-	if (mn->ops->free_notifier != NULL)
-		mn->ops->free_notifier(mn);
+	WRITE_ONCE(mni->invalidate_seq, cur_seq);
 }
 
-static inline void
-mmu_notifier_synchronize(void)
+/*
+ * End a read side critical section started by mmu_interval_read_begin().
+ * Returns true if the range was invalidated in between and the caller must
+ * retry.  Must be called with the driver lock held.
+ */
+static inline bool
+mmu_interval_read_retry(struct mmu_interval_notifier *mni, unsigned long seq)
 {
-	pr_debug("%s: TODO\n", __func__);
+	return (mni->invalidate_seq != seq);
 }
+
+/* Lockless and racy variant of mmu_interval_read_retry(). */
+static inline bool
+mmu_interval_check_retry(struct mmu_interval_notifier *mni, unsigned long seq)
+{
+	return (READ_ONCE(mni->invalidate_seq) != seq);
+}
+
+void	linux_mmu_notifier_subscriptions_destroy(struct mm_struct *);
 
 #endif /* _LINUXKPI_LINUX_MMU_NOTIFIER_H_ */

@@ -34,6 +34,7 @@
 #include <linux/compat.h>
 #include <linux/completion.h>
 #include <linux/mm.h>
+#include <linux/mmu_notifier.h>
 #include <linux/kthread.h>
 #include <linux/moduleparam.h>
 
@@ -163,6 +164,7 @@ linux_get_task_mm(struct task_struct *task)
 void
 linux_mm_dtor(struct mm_struct *mm)
 {
+	linux_mmu_notifier_subscriptions_destroy(mm);
 	uma_zfree(linux_mm_zone, mm);
 }
 
