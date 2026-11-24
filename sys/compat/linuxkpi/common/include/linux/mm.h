@@ -406,6 +406,13 @@ vmalloc_to_page(const void *addr)
 	return (PHYS_TO_VM_PAGE(paddr));
 }
 
+/* There is no ZONE_DEVICE, see linux/memremap.h. */
+static inline bool
+is_zone_device_page(const struct page *page)
+{
+	return (false);
+}
+
 static inline int
 trylock_page(struct page *page)
 {
