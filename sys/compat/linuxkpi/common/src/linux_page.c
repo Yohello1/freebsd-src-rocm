@@ -316,6 +316,83 @@ get_user_pages_remote(struct task_struct *task, struct mm_struct *mm,
 	    !!(gup_flags & FOLL_WRITE), pages));
 }
 
+/*
+ * Linux vma_lookup(): find the mapping of mm that contains addr.
+ *
+ * Ordinary mappings are vm_map entries, which have no struct
+ * vm_area_struct.  Return a snapshot of the entry instead, kept in the
+ * calling thread's task_struct: it describes the entry as it was at the
+ * time of the call and stays valid until the next vma_lookup() by the same
+ * thread.  Changing it has no effect on the mapping.  Callers that need the
+ * mapping to stay as described must use MMU notifiers to detect changes,
+ * since the LinuxKPI mmap lock does not exclude changes to the vm_map.
+ *
+ * The flags describe the entry as Linux would: VM_READ, VM_WRITE and
+ * VM_EXEC from the current protection, VM_MAYWRITE from the maximum
+ * protection, VM_SHARED unless the entry is copy-on-write, VM_IO and
+ * VM_PFNMAP for device memory, and VM_DONTCOPY if the entry is not
+ * inherited by fork(2).  Guard entries are not mappings.
+ */
+struct vm_area_struct *
+lkpi_vma_lookup(struct mm_struct *mm, unsigned long addr)
+{
+	struct task_struct *ts;
+	struct vm_area_struct *vma;
+	struct vmspace *vm;
+	vm_map_entry_t entry;
+	vm_map_t map;
+	vm_object_t obj;
+	vm_offset_t heap, stack;
+	unsigned long flags;
+
+	ts = current;
+	if (ts->bsd_vma == NULL)
+		ts->bsd_vma = kzalloc(sizeof(*ts->bsd_vma), GFP_KERNEL);
+	if (ts->bsd_vma == NULL)
+		return (NULL);
+	vm = linux_mm_vmspace_acquire(mm);
+	if (vm == NULL)
+		return (NULL);
+	vma = ts->bsd_vma;
+	map = &vm->vm_map;
+	vm_map_lock_read(map);
+	if (!vm_map_lookup_entry(map, addr, &entry) ||
+	    (entry->eflags & (MAP_ENTRY_GUARD | MAP_ENTRY_IS_SUB_MAP)) != 0) {
+		vm_map_unlock_read(map);
+		vmspace_free(vm);
+		return (NULL);
+	}
+
+	memset(vma, 0, sizeof(*vma));
+	vma->vm_start = entry->start;
+	vma->vm_end = entry->end;
+	vma->vm_pgoff = OFF_TO_IDX(entry->offset);
+	vma->vm_mm = mm;
+	flags = entry->protection & VM_ACCESS_FLAGS;
+	if ((entry->max_protection & VM_PROT_WRITE) != 0)
+		flags |= VM_MAYWRITE;
+	if ((entry->eflags & MAP_ENTRY_COW) == 0)
+		flags |= VM_SHARED;
+	obj = entry->object.vm_object;
+	if (obj != NULL && (obj->type == OBJT_DEVICE ||
+	    obj->type == OBJT_MGTDEVICE || obj->type == OBJT_SG))
+		flags |= VM_IO | VM_PFNMAP;
+	if (entry->inheritance == VM_INHERIT_NONE)
+		flags |= VM_DONTCOPY;
+	vma->vm_flags = flags;
+
+	/* Linux mm->start_brk..brk and mm->start_stack. */
+	heap = (vm_offset_t)vm->vm_daddr;
+	if (entry->start < heap + ptoa(vm->vm_dsize) && entry->end > heap)
+		vma->vm_bsd_flags |= LKPI_VMA_INITIAL_HEAP;
+	stack = vm->vm_stacktop;
+	if (entry->start < stack && entry->end >= stack)
+		vma->vm_bsd_flags |= LKPI_VMA_INITIAL_STACK;
+	vm_map_unlock_read(map);
+	vmspace_free(vm);
+	return (vma);
+}
+
 long
 lkpi_get_user_pages(unsigned long start, unsigned long nr_pages,
     unsigned int gup_flags, struct page **pages)

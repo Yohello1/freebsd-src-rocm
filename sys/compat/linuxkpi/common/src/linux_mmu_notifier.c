@@ -178,6 +178,33 @@ lkpi_mn_subscribe(struct mm_struct *mm,
 	return (0);
 }
 
+/*
+ * Return a reference on the vmspace of mm, or NULL if there is none: mm
+ * belongs to the calling process, or is bound to a vmspace by MMU notifier
+ * subscriptions.
+ */
+struct vmspace *
+linux_mm_vmspace_acquire(struct mm_struct *mm)
+{
+	struct mmu_notifier_subscriptions *subs;
+	struct vmspace *vm;
+	struct proc *p;
+
+	p = curproc;
+	if (current->mm == mm && (p->p_flag & P_SYSTEM) == 0)
+		return (vmspace_acquire_ref(p));
+	subs = (void *)atomic_load_acq_ptr(
+	    (volatile uintptr_t *)&mm->notifier_subscriptions);
+	if (subs == NULL)
+		return (NULL);
+	mtx_lock(&subs->lock);
+	vm = subs->vm;
+	if (vm != NULL && !refcount_acquire_if_not_zero(&vm->vm_refcnt))
+		vm = NULL;
+	mtx_unlock(&subs->lock);
+	return (vm);
+}
+
 /* Called from linux_mm_dtor() when the last reference to mm is dropped. */
 void
 linux_mmu_notifier_subscriptions_destroy(struct mm_struct *mm)
