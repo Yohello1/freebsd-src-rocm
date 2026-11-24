@@ -59,6 +59,12 @@ mmdrop(struct mm_struct *mm)
 		linux_mm_dtor(mm);
 }
 
+static inline void
+mmget(struct mm_struct *mm)
+{
+	atomic_inc(&mm->mm_users);
+}
+
 static inline bool
 mmget_not_zero(struct mm_struct *mm)
 {
@@ -70,6 +76,17 @@ mmput(struct mm_struct *mm)
 {
 	if (__predict_false(atomic_dec_and_test(&mm->mm_users)))
 		mmdrop(mm);
+}
+
+/*
+ * Linux defers the final teardown of the address space to a workqueue
+ * because it may sleep.  Dropping the last mm_users reference here only
+ * frees the mm_struct and never sleeps, so this is mmput().
+ */
+static inline void
+mmput_async(struct mm_struct *mm)
+{
+	mmput(mm);
 }
 
 static inline void
