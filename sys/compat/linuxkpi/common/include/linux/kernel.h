@@ -59,6 +59,7 @@
 #include <linux/instruction_pointer.h>
 #include <linux/hex.h>
 #include <linux/wordpart.h>
+#include <linux/sprintf.h>
 
 #include <asm/byteorder.h>
 #include <asm/cpufeature.h>
@@ -144,35 +145,6 @@ extern int linuxkpi_warn_dump_stack;
 
 extern void linux_dump_stack(void);
 #define	dump_stack()		linux_dump_stack()
-
-struct va_format {
-	const char *fmt;
-	va_list *va;
-};
-
-static inline int
-vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
-{
-	ssize_t ssize = size;
-	int i;
-
-	i = vsnprintf(buf, size, fmt, args);
-
-	return ((i >= ssize) ? (ssize - 1) : i);
-}
-
-static inline int
-scnprintf(char *buf, size_t size, const char *fmt, ...)
-{
-	va_list args;
-	int i;
-
-	va_start(args, fmt);
-	i = vscnprintf(buf, size, fmt, args);
-	va_end(args);
-
-	return (i);
-}
 
 /*
  * The "pr_debug()" and "pr_devel()" macros should produce zero code
